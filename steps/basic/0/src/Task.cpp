@@ -2,7 +2,7 @@
 
 // 【修改】初始化列表加入 m_priority
 Task::Task(int id, const std::string& desc, Priority priority, bool completed) 
-    : m_id(id), m_desc(desc), m_priority(priority), m_completed(completed) 
+    : m_id(id), m_desc(desc), m_completed(completed), m_priority(priority) 
 {
 }
 
