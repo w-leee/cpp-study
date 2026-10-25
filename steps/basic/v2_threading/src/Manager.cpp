@@ -20,6 +20,7 @@ Manager::Manager(const std::string& file_path) : m_file_path(file_path), m_runni
     m_auto_save_thread = std::thread(&Manager::auto_save_loop, this);
 }
 
+
 Manager::~Manager() 
 {
     // 【OS 概念】相当于发送一个终止信号。

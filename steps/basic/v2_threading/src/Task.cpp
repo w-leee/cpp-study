@@ -7,7 +7,7 @@
  * 【避坑指南】初始化列表的顺序，必须和 .h 文件中声明的顺序一致！
  */
 Task::Task(int id, const std::string& desc, Priority priority, bool completed) 
-    : m_id(id), m_desc(desc), m_priority(priority), m_completed(completed) 
+    : m_id(id), m_desc(desc), m_completed(completed), m_priority(priority) 
 {
 }
 
