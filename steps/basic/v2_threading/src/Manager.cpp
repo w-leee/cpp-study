@@ -14,7 +14,7 @@
 Manager::Manager(const std::string& file_path) : m_file_path(file_path), m_running(true) 
 {
     load();
-    // 【OS 概念】相当于系统调用 pthread_create。
+    // 【OS 概念】相当于系统调用 pthread_create()创造一个新线程。
     // 我们向系统申请创建一个新的执行流（线程），让它去执行 auto_save_loop 函数。
     // 传 this 指针，是因为 auto_save_loop 是类的成员函数，需要知道操作哪个对象。
     m_auto_save_thread = std::thread(&Manager::auto_save_loop, this);

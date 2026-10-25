@@ -14,7 +14,7 @@ int main()
         std::cout << "2. 添加任务\n";
         std::cout << "3. 标记完成\n";
         std::cout << "4. 删除任务\n";
-        std::cout << "5. 按优先级排序查看\n"; // 【新增】
+        std::cout << "5. 按优先级排序查看\n";
         std::cout << "6. 退出\n";
         std::cout << "请选择: ";
 
@@ -31,7 +31,6 @@ int main()
             std::cin.ignore();
             std::getline(std::cin, desc);
 
-            // 【新增】优先级选择逻辑
             std::cout << "设置优先级 (1=高, 2=中, 3=低): ";
             int p;
             std::cin >> p;
@@ -58,7 +57,7 @@ int main()
             std::cin >> id;
             mgr.remove(id);
         }
-        else if (choice == 5) // 【新增】
+        else if (choice == 5)
         {
             mgr.show_sorted();
         }
