@@ -14,9 +14,38 @@
 Manager::Manager(const std::string& file_path) : m_file_path(file_path), m_running(true) 
 {
     load();
-    // 【OS 概念】相当于系统调用 pthread_create()创造一个新线程。
-    // 我们向系统申请创建一个新的执行流（线程），让它去执行 auto_save_loop 函数。
-    // 传 this 指针，是因为 auto_save_loop 是类的成员函数，需要知道操作哪个对象。
+    
+    /* 
+    【OS 概念】相当于系统调用 pthread_create()创造一个新线程
+
+    【为什么要写这行代码？】
+    向操作系统申请创建一个新的执行流（后台线程），让它去执行 auto_save_loop 函数。
+    从这一秒开始，程序变成了两个执行流：主线程负责和你交互，后台线程负责偷偷存盘。
+
+    【疑惑 1：为什么不直接写 auto_save_loop()？】
+    如果带上 ()，意思是“立刻执行这个函数”。那么主线程会瞬间跳进 while(m_running) 的死循环里卡死，
+    连菜单都打印不出来，你就没法操作了。
+    传给 std::thread 的必须是“函数地址（代码的坐标）”，而不是“执行结果”。
+
+    【疑惑 2：为什么要加 &Manager:: ？】
+    auto_save_loop 是类的非静态成员函数。
+    在 C++ 语法中，提取类的成员函数地址，必须加 & 并带上类名，写成 &Manager::auto_save_loop。
+    & 的作用是把函数在内存（代码区）的精确坐标抄下来，告诉新线程去这个地址读指令。
+
+    【疑惑 3：为什么还要传 this 指针？】
+    this 就是当前对象的内存地址。因为成员函数底层自带一个隐藏参数 this。
+    新线程拿到 this 后，才能精准锁定是给“当前这栋房子”干活，而不是给别的对象干活。
+
+    【终极比喻：造房子与雇工人】
+    类（Manager） = 造房子的图纸
+    对象（mgr） = 当前造出来的实体房子
+    成员函数（auto_save_loop） = 怎么扫地、存盘的说明书，放在小区公共图书馆（代码区）里，只有一份。
+    成员变量（m_tasks，m_next_id，m_running） = 房子里的私人物品。
+
+    这行代码的真实意图是：
+    “系统，给我雇一个新工人（新线程），给他这张图书馆的说明书坐标（&Manager::auto_save_loop），
+    再给他这栋房子的唯一钥匙（this），让他去这栋房子里按说明书干活。”
+    */
     m_auto_save_thread = std::thread(&Manager::auto_save_loop, this);
 }
 
@@ -24,12 +53,26 @@ Manager::Manager(const std::string& file_path) : m_file_path(file_path), m_runni
 Manager::~Manager() 
 {
     // 【OS 概念】相当于发送一个终止信号。
-    // 把原子变量设为 false，后台线程的 while(m_running) 判断到后，就会跳出循环。
+    /* 1. 触发退出信号
+    将原子变量 m_running 置为 false。
+    后台线程在 while(m_running) 循环中检测到此信号后，将跳出循环并结束运行。
+    */
     m_running = false; 
 
-    // 【OS 概念】相当于父进程执行 wait()。
-    // 如果后台线程还没退出，主线程就强行结束，整个程序会崩溃（std::terminate）。
-    // join() 会让主线程阻塞，直到后台线程安全跑完最后一圈。
+    /* 
+    【OS 概念】join() 相当于父进程执行 wait() 系统调用。
+
+    【关于 joinable()】
+    严谨地说，joinable() 返回 true，代表这个线程对象当前正关联着一个活跃的（或者已经结束但尚未被回收的）底层系统线程。
+    必须先判断它，因为如果对未关联底层线程（如空对象或已 join 过的对象）调用 join()，程序会直接抛出异常导致崩溃。
+
+    【为什么必须 join】
+    如果不等待后台线程结束，主线程直接退出（进程销毁），操作系统会强杀所有子线程。
+    如果此时后台线程正在执行 save() 写硬盘，会导致文件损坏或数据丢失。此外，C++ 规定如果 std::thread 对象在销毁时依然是 joinable 状态，程序会直接触发 std::terminate 崩溃。
+
+    【底层动作】
+    调用 join() 会让主线程进入阻塞态（Blocked），原地死等，直到后台线程安全跑完最后一圈循环、彻底终止，操作系统回收其资源后，主线程才会被唤醒继续执行。
+    */
     if (m_auto_save_thread.joinable()) {
         m_auto_save_thread.join(); 
     }
@@ -73,7 +116,6 @@ void Manager::auto_save_loop()
         
         // 在临界区内安全地存盘
         save(); 
-        std::cout << "\n[后台自动保存] 数据已安全落盘...\n";
     }
 }
 
@@ -83,7 +125,29 @@ void Manager::auto_save_loop()
 
 void Manager::add(const std::string& desc, Priority priority) 
 {
-    // 主线程要修改 m_tasks，必须抢到锁！
+    /* 
+    【OS 操作系统概念映射】
+    1. 临界资源：m_tasks (哈希表) 是被多线程共享的临界资源。
+    2. 临界区：对 m_tasks 进行读写的这段代码就是临界区。
+    3. 二值信号量：std::mutex 底层是一个初始值为 1 的二值信号量。
+    4. P/V 原语操作：
+       - lock() 相当于 P 操作（申请资源），将信号量 1 减为 0。若当前已有线程占用（信号量为 0），当前线程进入【阻塞态 (Blocked)】，交出 CPU 时间片排队。
+       - unlock() 相当于 V 操作（释放资源），将信号量 0 加为 1，唤醒等待队列中的线程。
+    
+    【语法拆解】
+    1. std::lock_guard<std::mutex> 是一个类模板（保镖类）。
+    2. lock 是创建在栈区的一个局部对象。
+    3. (m_mutex) 将我们在类中定义的互斥锁实例作为构造参数传入。
+
+    【核心机制：RAII (资源获取即初始化)】
+    - 出生即加锁：当 lock 对象被创建时，其构造函数会自动调用 m_mutex.lock() (底层 P 操作)。如果锁被占用，当前线程阻塞。
+    - 死亡即解锁：当代码离开当前大括号 { } 作用域时（无论是正常结束、return 还是抛出异常），lock 对象会被自动销毁，其析构函数会自动调用 m_mutex.unlock() (底层 V 操作)。
+
+    【为什么不用手写 lock() 和 unlock()？】
+    如果手动调用 lock()，一旦中间发生 return 或抛出异常，unlock() 就会被跳过。
+    这会导致锁永远无法释放，其他线程全部卡死，即发生【死锁 (Deadlock)】。
+    使用 lock_guard 可以利用 C++ 的栈对象析构机制，保证锁绝对成对出现，彻底杜绝死锁。
+    */
     std::lock_guard<std::mutex> lock(m_mutex);
     
     m_tasks.emplace(m_next_id, std::make_unique<Task>(m_next_id, desc, priority));

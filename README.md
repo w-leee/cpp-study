@@ -52,9 +52,16 @@ cp -r steps/basic/v2_threading steps/basic/v3_opencv
 
 ```bash
 cd ~/workspace/study/build
-rm -rf *        # 清空缓存，防止旧文件污染
-cmake ..        # 生成 Makefile
-make            # 全量编译
+
+# 1. 清空缓存，防止旧文件污染
+# 注：修改了 CMakeLists.txt，或者在工程里新增/删除了 .cpp / .h 文件后，必须执行这一步以及下一步的 cmake .. 命令，反之则不需要执行
+rm -rf *        
+
+# 2. 生成 Makefile
+cmake ..        
+
+# 3. 全量编译
+make            
 ```
 
 
